@@ -30,14 +30,26 @@ make SQLITE_INCLUDE=/path/to/sqlite/headers
 
 In `sqlite3` shell:
 
+macOS:
 ```
 .load ./build/macos/postings.dylib
 ```
 
+Linux:
+```
+.load ./build/linux/postings.so
+```
+
 Or as command line:
 
+macOS:
 ```
 sqlite3 test.db ".load ./build/macos/postings.dylib"
+```
+
+Linux:
+```
+sqlite3 test.db ".load ./build/linux/postings.so"
 ```
 
 ### JSON1 Requirement (for in-SQL concordance)
@@ -114,6 +126,12 @@ python3 build_test_db.py --db bigtest.db --tokens 200000
 
 Then:
 
+macOS:
 ```
 sqlite3 bigtest.db ".load ./build/macos/postings.dylib" ".read test_queries.sql"
+```
+
+Linux:
+```
+sqlite3 bigtest.db ".load ./build/linux/postings.so" ".read test_queries.sql"
 ```

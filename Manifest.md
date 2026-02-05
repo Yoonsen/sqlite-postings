@@ -97,15 +97,23 @@ cl /LD src\postings.c /Fe:build\windows\postings.dll
 
 ### SQLite CLI
 
+macOS:
 ```
 sqlite> .load ./build/macos/postings.dylib
+```
+
+Linux:
+```
+sqlite> .load ./build/linux/postings.so
 ```
 
 ### Python
 
 ```python
 db.enable_load_extension(True)
-db.load_extension("build/macos/postings.dylib")
+# macOS: build/macos/postings.dylib
+# Linux: build/linux/postings.so
+db.load_extension("build/linux/postings.so")
 ```
 
 ### Julia
@@ -113,7 +121,9 @@ db.load_extension("build/macos/postings.dylib")
 ```julia
 using SQLite
 db = SQLite.DB("shard.db")
-SQLite.load_extension(db, "build/macos/postings.dylib")
+# macOS: build/macos/postings.dylib
+# Linux: build/linux/postings.so
+SQLite.load_extension(db, "build/linux/postings.so")
 ```
 
 ---

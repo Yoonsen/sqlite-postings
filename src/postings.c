@@ -180,6 +180,58 @@ static void post_intersect_offset_sqlite(
 }
 
 /*
+ * post_intersect_offset_sym(blobA, blobB, off_min, off_max)
+ *  - symmetrisk variant: teller par og flytter begge ved treff
+ *    (mindre følsom for rekkefølge mellom A/B)
+ */
+static void post_intersect_offset_sym_sqlite(
+    sqlite3_context *ctx,
+    int argc,
+    sqlite3_value **argv
+) {
+    if (argc != 4) {
+        sqlite3_result_error(ctx, "post_intersect_offset_sym(blob, blob, off_min, off_max) expects 4 args", -1);
+        return;
+    }
+
+    const unsigned char *a = sqlite3_value_blob(argv[0]);
+    const unsigned char *b = sqlite3_value_blob(argv[1]);
+    int a_len = sqlite3_value_bytes(argv[0]);
+    int b_len = sqlite3_value_bytes(argv[1]);
+    int off_min = sqlite3_value_int(argv[2]);
+    int off_max = sqlite3_value_int(argv[3]);
+
+    if (!a || !b || a_len <= 0 || b_len <= 0) {
+        sqlite3_result_int(ctx, 0);
+        return;
+    }
+
+    const uint8_t *pa = a, *pb = b;
+    const uint8_t *ea = a + a_len, *eb = b + b_len;
+    uint64_t acc_a = 0, acc_b = 0;
+
+    int count = 0;
+    int has_a = next_seq(&pa, ea, &acc_a);
+    int has_b = next_seq(&pb, eb, &acc_b);
+
+    while (has_a && has_b) {
+        int64_t diff = (int64_t)acc_b - (int64_t)acc_a;
+        if (diff < off_min) {
+            has_b = next_seq(&pb, eb, &acc_b);
+        } else if (diff > off_max) {
+            has_a = next_seq(&pa, ea, &acc_a);
+        } else {
+            count++;
+            // Symmetrisk: flytt begge videre
+            has_a = next_seq(&pa, ea, &acc_a);
+            has_b = next_seq(&pb, eb, &acc_b);
+        }
+    }
+
+    sqlite3_result_int(ctx, count);
+}
+
+/*
  * post_sample(blob, idx)
  *  - returnerer seq på indeks idx (0-basert) i postingslista
  */
@@ -377,6 +429,13 @@ int sqlite3_postings_init(
         db, "post_intersect_offset", 4,
         SQLITE_UTF8 | SQLITE_DETERMINISTIC,
         NULL, post_intersect_offset_sqlite, NULL, NULL
+    );
+    if (rc != SQLITE_OK) return rc;
+
+    rc = sqlite3_create_function(
+        db, "post_intersect_offset_sym", 4,
+        SQLITE_UTF8 | SQLITE_DETERMINISTIC,
+        NULL, post_intersect_offset_sym_sqlite, NULL, NULL
     );
     if (rc != SQLITE_OK) return rc;
 
