@@ -409,6 +409,54 @@ static void post_near_positions_sqlite(
     sqlite3_result_text(ctx, buf, len, sqlite3_free);
 }
 
+/*
+ * post_near_count(blobA, blobB, off_min, off_max)
+ *  - returnerer antall posisjoner i A der det finnes en B innenfor [off_min, off_max]
+ */
+static void post_near_count_sqlite(
+    sqlite3_context *ctx,
+    int argc,
+    sqlite3_value **argv
+) {
+    if (argc != 4) {
+        sqlite3_result_error(ctx, "post_near_count(blob, blob, off_min, off_max) expects 4 args", -1);
+        return;
+    }
+
+    const unsigned char *a = sqlite3_value_blob(argv[0]);
+    const unsigned char *b = sqlite3_value_blob(argv[1]);
+    int a_len = sqlite3_value_bytes(argv[0]);
+    int b_len = sqlite3_value_bytes(argv[1]);
+    int off_min = sqlite3_value_int(argv[2]);
+    int off_max = sqlite3_value_int(argv[3]);
+
+    if (!a || !b || a_len <= 0 || b_len <= 0) {
+        sqlite3_result_int(ctx, 0);
+        return;
+    }
+
+    const uint8_t *pa = a, *pb = b;
+    const uint8_t *ea = a + a_len, *eb = b + b_len;
+    uint64_t acc_a = 0, acc_b = 0;
+    int has_a = next_seq(&pa, ea, &acc_a);
+    int has_b = next_seq(&pb, eb, &acc_b);
+    int count = 0;
+
+    while (has_a && has_b) {
+        int64_t diff = (int64_t)acc_b - (int64_t)acc_a;
+        if (diff < off_min) {
+            has_b = next_seq(&pb, eb, &acc_b);
+        } else if (diff > off_max) {
+            has_a = next_seq(&pa, ea, &acc_a);
+        } else {
+            count++;
+            has_a = next_seq(&pa, ea, &acc_a);
+        }
+    }
+
+    sqlite3_result_int(ctx, count);
+}
+
 // Entry point for sqlite3_load_extension
 int sqlite3_postings_init(
     sqlite3 *db,
@@ -457,6 +505,13 @@ int sqlite3_postings_init(
         db, "post_near_positions", 4,
         SQLITE_UTF8 | SQLITE_DETERMINISTIC,
         NULL, post_near_positions_sqlite, NULL, NULL
+    );
+    if (rc != SQLITE_OK) return rc;
+
+    rc = sqlite3_create_function(
+        db, "post_near_count", 4,
+        SQLITE_UTF8 | SQLITE_DETERMINISTIC,
+        NULL, post_near_count_sqlite, NULL, NULL
     );
     if (rc != SQLITE_OK) return rc;
 

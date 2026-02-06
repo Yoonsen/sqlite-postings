@@ -91,10 +91,10 @@ if run_compare and not bok_ids:
     bok_ids = ensure_random_bok_ids(postings_db, corpus_size)
     st.session_state["bok_ids"] = bok_ids
 
-left, right = st.columns(2)
+left, middle, right = st.columns(3)
 
 with left:
-    st.subheader("Postings: nærhetssøk")
+    st.subheader("Postings: near_count")
     if run_compare:
         try:
             conn = open_postings_db(postings_db)
@@ -109,7 +109,7 @@ with left:
                 SELECT bok_id, hits
                 FROM (
                   SELECT a.bok_id,
-                         post_intersect_offset_sym(a.blob, b.blob, ?, ?) AS hits
+                         post_near_count(a.blob, b.blob, ?, ?) AS hits
                   FROM postings a
                   JOIN postings b USING (bok_id)
                   WHERE a.word = ? AND b.word = ?
@@ -160,6 +160,79 @@ with left:
         except Exception as exc:
             st.error(f"Feil: {exc}")
 
+with middle:
+    st.subheader("Postings: offset_sym")
+    if run_compare:
+        try:
+            conn = open_postings_db(postings_db)
+            cur = conn.cursor()
+            bok_ids = st.session_state["bok_ids"] or None
+            if not bok_ids:
+                bok_ids = ensure_random_bok_ids(postings_db, corpus_size)
+
+            placeholders = ",".join("?" for _ in bok_ids)
+            t0 = time.perf_counter()
+            sql_hits = f"""
+                SELECT bok_id, hits
+                FROM (
+                  SELECT a.bok_id,
+                         post_intersect_offset_sym(a.blob, b.blob, ?, ?) AS hits
+                  FROM postings a
+                  JOIN postings b USING (bok_id)
+                  WHERE a.word = ? AND b.word = ?
+                    AND a.bok_id IN ({placeholders})
+                )
+                WHERE hits > 0
+                ORDER BY hits DESC
+            """
+            params = [off_min, off_max, word_a, word_b] + bok_ids
+            cur.execute(sql_hits, params)
+            hits_rows = cur.fetchall()
+            elapsed = time.perf_counter() - t0
+            st.write(f"Bøker i korpus: {len(bok_ids)}")
+            st.write(f"Treff (bøker): {len(hits_rows)}")
+            st.write(f"Tid (total): {elapsed:.3f} s")
+            if hits_rows:
+                st.dataframe(hits_rows, use_container_width=True)
+            else:
+                st.write("Ingen treff.")
+            conn.close()
+        except Exception as exc:
+            st.error(f"Feil: {exc}")
+
+with right:
+    st.subheader("FTS5: NEAR‑søk")
+    if run_compare:
+        if not fts_db:
+            st.warning("Oppgi en FTS5‑DB.")
+        else:
+            try:
+                conn = sqlite3.connect(fts_db)
+                cur = conn.cursor()
+                distance = abs(off_max)
+                query = f'NEAR("{word_a}" "{word_b}", {distance})'
+                placeholders = ",".join("?" for _ in bok_ids)
+                t0 = time.perf_counter()
+                sql_hits = (
+                    f"SELECT urn, COUNT(*) AS hits FROM ft_para "
+                    f"WHERE ft_para MATCH ? AND urn IN ({placeholders}) "
+                    f"GROUP BY urn ORDER BY hits DESC"
+                )
+                params = [query] + bok_ids
+                cur.execute(sql_hits, params)
+                hits_rows = cur.fetchall()
+                elapsed = time.perf_counter() - t0
+                st.write(f"Bøker i korpus: {len(bok_ids)}")
+                st.write(f"Treff (bøker): {len(hits_rows)}")
+                st.write(f"Tid (total): {elapsed:.3f} s")
+                if hits_rows:
+                    st.dataframe(hits_rows, use_container_width=True)
+                else:
+                    st.write("Ingen treff.")
+                conn.close()
+            except Exception as exc:
+                st.error(f"Feil: {exc}")
+
 st.subheader("Postings: konkordans")
 if st.button("Kjør konkordans"):
     try:
@@ -197,36 +270,3 @@ if st.button("Kjør konkordans"):
         conn.close()
     except Exception as exc:
         st.error(f"Feil: {exc}")
-
-with right:
-    st.subheader("FTS5: NEAR‑søk")
-    if run_compare:
-        if not fts_db:
-            st.warning("Oppgi en FTS5‑DB.")
-        else:
-            try:
-                conn = sqlite3.connect(fts_db)
-                cur = conn.cursor()
-                distance = abs(off_max)
-                query = f'NEAR("{word_a}" "{word_b}", {distance})'
-                placeholders = ",".join("?" for _ in bok_ids)
-                t0 = time.perf_counter()
-                sql_hits = (
-                    f"SELECT urn, COUNT(*) AS hits FROM ft_para "
-                    f"WHERE ft_para MATCH ? AND urn IN ({placeholders}) "
-                    f"GROUP BY urn ORDER BY hits DESC"
-                )
-                params = [query] + bok_ids
-                cur.execute(sql_hits, params)
-                hits_rows = cur.fetchall()
-                elapsed = time.perf_counter() - t0
-                st.write(f"Bøker i korpus: {len(bok_ids)}")
-                st.write(f"Treff (bøker): {len(hits_rows)}")
-                st.write(f"Tid (total): {elapsed:.3f} s")
-                if hits_rows:
-                    st.dataframe(hits_rows, use_container_width=True)
-                else:
-                    st.write("Ingen treff.")
-                conn.close()
-            except Exception as exc:
-                st.error(f"Feil: {exc}")
